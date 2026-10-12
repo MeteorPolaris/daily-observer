@@ -1,0 +1,42 @@
+name: daily
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Kick off at 06:30 UTC to absorb GitHub scheduler lag (observed 1-6.5h);
+    # the job then sleeps until a random moment inside 12:30-14:00 UTC.
+    - cron: 30 6 * * *
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install requirements
+        run: pip install requests
+      - name: Wait until random moment in 12:30-14:00 UTC (scheduled runs only)
+        if: github.event_name == 'schedule'
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+          WIN_START=$(date -u -d "${TODAY} 12:30:00" +%s)
+          WIN_END=$(date -u -d "${TODAY} 14:00:00" +%s)
+          TARGET=$((WIN_START + RANDOM % (WIN_END - WIN_START)))
+          NOW=$(date -u +%s)
+          echo "Target time: $(date -u -d @${TARGET} '+%H:%M:%S') UTC"
+          if [ "$NOW" -lt "$TARGET" ]; then
+            DELAY=$((TARGET - NOW))
+            echo "Sleeping ${DELAY}s ($((DELAY/60)) min)..."
+            sleep "$DELAY"
+          else
+            echo "Already past today's target window - running now."
+          fi
+      - name: Run
+        run: python3 observer.py
+        env:
+          GLADOS_COOKIE: "${{ secrets.GLADOS_COOKIE }}"
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
